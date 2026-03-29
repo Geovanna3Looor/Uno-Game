@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🃏 UNO Online - 12 Jugadores</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',sans-serif}
+        body{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);height:100vh;overflow:hidden;color:#fff}
+        .screen{display:none;height:100vh;flex-direction:column}.screen.active{display:flex}
+        .logo{text-align:center;margin:2rem 0}.logo h1{font-size:3rem;margin-bottom:.5rem;text-shadow:2px 2px 4px rgba(0,0,0,.3)}
+        .form-group{display:flex;gap:1rem;justify-content:center;margin:2rem 0}
+        .form-group input{padding:1rem 1.5rem;border:none;border-radius:25px;font-size:1.1rem;width:200px;outline:none;box-shadow:0 4px 15px rgba(0,0,0,.2)}
+        button{padding:1rem 2rem;border:none;border-radius:25px;font-size:1.1rem;font-weight:700;cursor:pointer;transition:all .3s ease;margin:.5rem;background:linear-gradient(45deg,#ff6b6b,#ff8e8e);color:#fff}
+        button:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,0,0,.3)}
+        button:disabled{opacity:.5;cursor:not-allowed;transform:none}
+        .room-header{display:flex;justify-content:space-between;align-items:center;padding:1rem 2rem;background:rgba(255,255,255,.1);backdrop-filter:blur(10px)}
+        .players-grid{flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;padding:2rem;overflow-y:auto}
+        .player-card{background:rgba(255,255,255,.2);border-radius:15px;padding:1.5rem;text-align:center;backdrop-filter:blur(10px);border:2px solid rgba(255,255,255,.3);transition:all .3s}
+        .player-card.active{background:rgba(255,107,107,.4);border-color:#ff6b6b;transform:scale(1.05)}
+        .player-card.owner{border-color:#ffd700;background:rgba(255,215,0,.2)}
+        .game-header{display:flex;justify-content:space-between;align-items:center;padding:1rem 2rem;background:rgba(0,0,0,.3);backdrop-filter:blur(10px)}
+        .center-card{width:120px;height:180px;margin:2rem 0;display:flex;align-items:center;justify-content:center;border-radius:15px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+        .card{width:80px;height:120px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:2rem;font-weight:700;cursor:pointer;transition:all .3s;box-shadow:0 5px 15px rgba(0,0,0,.3)}
+        .card:hover{transform:translateY(-5px) scale(1.05)}
+        .card.playable{border:3px solid #ffd700;box-shadow:0 0 20px #ffd700}
+        .red{background:linear-gradient(145deg,#ff4757,#ff6b7a);color:#fff}.blue{background:linear-gradient(145deg,#3742fa,#535fd8);color:#fff}
+        .green{background:linear-gradient(145deg,#2ed573,#51cf66);color:#fff}.yellow{background:linear-gradient(145deg,#ffa502,#ffcb6b);color:#333}
+        .special{background:linear-gradient(145deg,#2f3542,#57606f);color:#ffd700}
+        .hand-container{display:flex;gap:.5rem;padding:2rem;overflow-x:auto;background:rgba(0,0,0,.2);border-radius:20px;margin:1rem;max-height:200px}
+        .game-controls{padding:1rem;display:flex;gap:1rem;justify-content:center}
+        .chat-section{position:fixed;bottom:20px;right:20px;width:300px;height:400px;background:rgba(255,255,255,.95);border-radius:20px;box-shadow:0 10px 40px rgba(0,0,0,.3);display:flex;flex-direction:column}
+        .voice-controls{display:flex;gap:1rem;padding:1rem;border-bottom:1px solid #eee}
+        .chat-messages{flex:1;padding:1rem;overflow-y:auto;max-height:280px}
+        #chatInput{padding:1rem;border:none;border-top:1px solid #eee;border-radius:0 0 20px 20px;outline:none}
+        .modal{display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,.5)}
+        .modal-content{background:#fff;margin:15% auto;padding:20px;border-radius:20px;width:80%;max-width:400px;position:relative}
+        .sticker-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;padding:1rem 0}
+        .sticker{font-size:2rem;cursor:pointer;padding:1rem;border-radius:10px;transition:all .3s}
+        .sticker:hover{transform:scale(1.2);background:#f0f0f0}
+        @media(max-width:768px){.form-group{flex-direction:column;align-items:center}.form-group input{width:250px}.chat-section{width:90%;right:5%;height:300px}}
+    </style>
+</head>
+<body>
+    <div id="homeScreen" class="screen active">
+        <div class="logo">
+            <h1>🃏 UNO Online</h1>
+            <p>🎮 Hasta 12 amigos • Chat voz + Stickers</p>
+        </div>
+        <div class="form-group">
+            <input type="text" id="username" placeholder="👤 Tu nombre" maxlength="15" value="Jugador">
+            <input type="text" id="roomCode" placeholder="🔑 Código sala">
+        </div>
+        <button id="createRoom">🔥 Crear Sala Privada</button>
+        <button id="joinRoom">🚀 Unirse a Sala</button>
+    </div>
+
+    <div id="roomScreen" class="screen">
+        <div class="room-header">
+            <h2>Sala: <span id="roomCodeDisplay">-</span></h2>
+            <button id="backToHome">← Volver</button>
+        </div>
+        <div class="players-grid" id="playersGrid"></div>
+        <div class="room-controls" style="padding:2rem;text-align:center">
+            <button id="startGame" disabled style="background:linear-gradient(45deg,#4ecdc4,#44a08d)">🎮 Iniciar UNO</button>
+            <br><button id="copyRoomCode">📋 Copiar Código</button>
+        </div>
+    </div>
+
+    <div id="gameScreen" class="screen">
+        <div class="game-header">
+            <div>
+                <div id="currentPlayer" style="font-size:1.3rem">Jugador: Tú</div>
+                <div id="unoStatus"></div>
+            </div>
+            <div id="turnIndicator" style="font-size:1.5rem">🎯</div>
+        </div>
+
+        <div class="game-board">
+            <div class="center-card" id="centerCard">
+                <div class="card-placeholder">🃏</div>
+            </div>
+        </div>
+
+        <div class="hand-container" id="handContainer"></div>
+        <div class="game-controls">
+            <button id="drawCard">🎴 Robar Carta</button>
+            <button id="sayUno">🗣️ ¡UNO!</button>
+        </div>
+    </div>
+
+    <div class="chat-section">
+        <div class="voice-controls">
+            <button id="voiceToggle" title="🎤 Chat Voz">🎤</button>
+            <button id="stickerBtn" title="😄 Stickers">😄</button>
+        </div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <input type="text" id="chatInput" placeholder="💬 Escribe aquí...">
+    </div>
+
+    <div id="stickerModal" class="modal">
+        <div class="modal-content">
+            <span class="close" style="float:right;font-size:28px;font-weight:bold;cursor:pointer">&times;</span>
+            <div class="sticker-grid" id="stickerGrid"></div>
+        </div>
+    </div>
+
+    <script>
+        class UNOGame{constructor(){this.socket=io();this.username='';this.roomCode='';this.cards=[];this.players=[];this.gameState={};this.init()}init(){this.bindEvents();this.initStickers()}bindEvents(){document.getElementById('createRoom').onclick=()=>this.createRoom();document.getElementById('joinRoom').onclick=()=>this.joinRoom();document.getElementById('backToHome').onclick=()=>this.showScreen('homeScreen');document.getElementById('copyRoomCode').onclick=()=>this.copyRoomCode();document.getElementById('startGame').onclick=()=>this.startGame();document.getElementById('drawCard').onclick=()=>this.sendAction('draw');document.getElementById('sayUno').onclick=()=>this.sayUno();document.getElementById('chatInput').onkeypress=e=>{if(e.key==='Enter')this.sendChat()};document.getElementById('voiceToggle').onclick=()=>this.toggleVoice();document.getElementById('stickerBtn').onclick=()=>this.toggleStickerModal()}createRoom(){this.username=document.getElementById('username').value;this.socket.emit('createRoom',{username:this.username})}joinRoom(){this.username=document.getElementById('username').value;const roomCode=document.getElementById('roomCode').value;if(roomCode){this.socket.emit('joinRoom',{username:this.username,roomCode})}else{alert('📝 Ingresa el código')}}showScreen(screenId){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(screenId).classList.add('active')}updateRoomScreen(players,roomCode){this.players=players;this.roomCode=roomCode;document.getElementById('roomCodeDisplay').textContent=roomCode;const grid=document.getElementById('playersGrid');grid.innerHTML='';players.forEach((player,index)=>{const playerDiv=document.createElement('div');playerDiv.className=`player-card ${player.isOwner?'owner':''}`;playerDiv.innerHTML=`<div style="font-size:1.2rem;font-weight:700">${player.username}</div><div style="font-size:.9rem;opacity:.8">#${index+1}</div>${player.isOwner?'<div style="color:gold">👑 Creador</div>':''}`;grid.appendChild(playerDiv)});document.getElementById('startGame').disabled=!(players.find(p=>p.isOwner)?.username===this.username)||players.length<2}startGame(){this.socket.emit('startGame')}copyRoomCode(){navigator.clipboard.writeText(this.roomCode).then(()=>alert('✅ Código copiado!')||alert('📋 Código: '+this.roomCode))}renderHand(){const container=document.getElementById('handContainer');container.innerHTML='';this.cards.forEach((card,index)=>{const cardEl=document.createElement('div');cardEl.className=`card ${card.color} ${this.isPlayable(card)?'playable':''}`;cardEl.innerHTML=this.getCardSymbol(card);cardEl.onclick=()=>this.playCard(index);container.appendChild(cardEl)})}isPlayable(card){const center=this.gameState.centerCard;return card.color===center.color||card.value===center.value||card.special}playCard(index){if(this.isPlayable(this.cards[index]))this.socket.emit('playCard',{index})}sayUno(){this.socket.emit('sayUno')}sendChat(){const message=document.getElementById('chatInput').value;if(message.trim()){this.socket.emit('chatMessage',{username:this.username,message,timestamp:new Date()});document.getElementById('chatInput').value=''}}addChatMessage(data){const chat=document.getElementById('chatMessages');const msgDiv=document.createElement('div');msgDiv.innerHTML=`<strong>${data.username}:</strong> ${data.message}`;chat.appendChild(msgDiv);chat.scrollTop=chat.scrollHeight}getCardSymbol(card){const symbols={'0':'0️⃣','1':'1️⃣','2':'2️⃣','3':'3️⃣','4':'4️⃣','5':'5️⃣','6':'6️⃣','7':'7️⃣','8':'8️⃣','9':'9️⃣','skip':'⏭️','reverse':'🔄','draw2':'➕²'};return symbols[card.value]||card.value}initStickers(){const stickers=['😄','😂','😍','😎','🤩','🥳','🎉','🔥','💪','👍','👎','😢','😡','🤔','🙌','❤️','⭐','🚀','⚡','🌟'];const grid=document.getElementById('stickerGrid');stickers.forEach(sticker=>{const stickerEl=document.createElement('div');stickerEl.className='sticker';stickerEl.textContent=sticker;stickerEl.onclick=()=>{this.sendChatMessage(sticker);document.getElementById('stickerModal').style.display='none'};grid.appendChild(stickerEl)})}toggleStickerModal(){const modal=document.getElementById('stickerModal');modal.style.display=modal.style.display==='block'?'none':'block'}sendChatMessage(message){this.socket.emit('chatMessage',{username:this.username,message,timestamp:new Date()})}toggleVoice(){const btn=document.getElementById('voiceToggle');btn.textContent=btn.textContent==='🎤'?'🔇':'🎤';btn.style.background=btn.textContent==='🔇'?'#ff4757':''}}const game=new UNOGame();document.querySelector('.close').onclick=()=>document.getElementById('stickerModal').style.display='none';const socketEvents={roomCreated:(data)=>{game.showScreen('roomScreen');game.updateRoomScreen([{id:'1',username:game.username,isOwner:true}],data.roomCode)},roomJoined:(data)=>{game.showScreen('roomScreen');game.updateRoomScreen(data.players,data.roomCode)},playerJoined:(data)=>{game.updateRoomScreen(data.players,game.roomCode)},gameStarted:(data)=>{game.showScreen('gameScreen');game.cards=data.cards;game.gameState=data;game.renderHand()},chatMessage:(data)=>{game.addChatMessage(data)}};game.socket.onAny((event,data)=>{socketEvents[event]?.(data)});
+    </script>
+</body>
+</html>
